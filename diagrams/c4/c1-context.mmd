@@ -1,0 +1,41 @@
+---
+title: "C4 · Уровень 1 · System Context — Платформа приёмки возвратов WB"
+config:
+  flowchart:
+    wrappingWidth: 360
+    nodeSpacing: 40
+    rankSpacing: 70
+  themeVariables:
+    fontSize: "15px"
+---
+flowchart LR
+  buyer["<b>Покупатель</b><br/>[Person]<br/>Приносит товар на ПВЗ,<br/>получает деньги или отказ"]:::person
+  pvz["<b>Сотрудник ПВЗ</b><br/>[Person]<br/>Принимает возврат,<br/>фотографирует товар"]:::person
+  inspector["<b>Инспектор склада</b><br/>[Person]<br/>Осматривает<br/>возвращённый товар"]:::person
+
+  platform["<b>Платформа приёмки возвратов WB</b><br/>[Software System]<br/>Решает, принять ли возврат и когда вернуть деньги.<br/>Проверяет товар по фото ML-моделью<br/>и учится на итогах осмотра"]:::system
+
+  oms["<b>Система заказов (OMS)</b><br/>[External System]<br/>Заказы, даты покупки, категории"]:::ext
+  catalog["<b>Каталог товаров</b><br/>[External System]<br/>Карточки и эталонные фото"]:::ext
+  payments["<b>Платёжный сервис</b><br/>[External System]<br/>Возврат денег покупателю"]:::ext
+  buyerapp["<b>Приложение покупателя WB</b><br/>[External System]<br/>QR-код и статус возврата"]:::ext
+  wms["<b>Складская система (WMS)</b><br/>[External System]<br/>Приёмка возвратов на складе"]:::ext
+
+  buyer -->|"Передаёт товар,<br/>показывает QR-код"| pvz
+  pvz -->|"Скан QR, фото товара,<br/>итог ручной проверки"| platform
+  platform -->|"Решение: принять,<br/>переснять, проверить вручную"| pvz
+  inspector -->|"Вносит итог осмотра"| wms
+  wms -->|"Итог осмотра: в порядке,<br/>повреждение, подмена"| platform
+  platform -->|"Запрашивает заказ,<br/>срок и категорию"| oms
+  platform -->|"Берёт эталонные фото по SKU"| catalog
+  platform -->|"Команда: вернуть<br/>или удержать деньги"| payments
+  platform -->|"Статус возврата"| buyerapp
+  buyerapp -->|"Показывает статус<br/>и решение"| buyer
+
+  classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+  classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+  classDef container fill:#438dd5,stroke:#2e6295,color:#ffffff
+  classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+  classDef ext fill:#8c8c8c,stroke:#6b6b6b,color:#ffffff
+  classDef ml fill:#438dd5,stroke:#e8590c,stroke-width:4px,color:#ffffff
+  classDef mlc fill:#85bbf0,stroke:#e8590c,stroke-width:3px,color:#000000

@@ -1,0 +1,55 @@
+---
+title: "C4 · Уровень 3 · Components — Сервис проверки возврата (ML)"
+config:
+  flowchart:
+    wrappingWidth: 360
+    nodeSpacing: 40
+    rankSpacing: 70
+  themeVariables:
+    fontSize: "15px"
+---
+flowchart LR
+  returns["<b>Сервис возвратов</b><br/>[Container: Go]<br/>Вызывает проверку,<br/>применяет пороги 0.15 / 0.8"]:::ext
+
+  subgraph inspection["Сервис проверки возврата (ML) [Container: Python, FastAPI + Triton]"]
+    direction LR
+    api["<b>Inspection API</b><br/>[Component: FastAPI]<br/>POST /inspections<br/>вход: return_id, sku, photo_keys<br/>выход: risk, quality, reasons, model_version"]:::component
+    loader["<b>Загрузчик фото</b><br/>[Component: Python]<br/>Скачивает фото, выравнивает<br/>размер и ориентацию"]:::component
+    quality["<b>Контроль качества фото</b><br/>[Component: ONNX-модель]<br/>Резкость, свет, все ли ракурсы<br/>→ quality"]:::component
+    refprov["<b>Поставщик эталонов</b><br/>[Component: Python + LRU-кэш]<br/>Эталонные эмбеддинги SKU"]:::component
+    router["<b>Выбор версии модели</b><br/>[Component: клиент MLflow]<br/>Алиас production;<br/>если не загрузилась — previous"]:::component
+    infer["<b>Инференс</b><br/>[Component: Triton Inference Server]<br/>Сходство с эталоном → p_substitution<br/>Детектор повреждений → p_damage"]:::mlc
+    risk["<b>Агрегатор риска</b><br/>[Component: Python]<br/>Калибровка, risk = max(p_substitution, p_damage),<br/>причины для сотрудника"]:::component
+    plog["<b>Логгер предсказаний</b><br/>[Component: Kafka producer]<br/>Вход, скоры, версия модели"]:::component
+  end
+
+  photos@{ shape: cyl, label: "<b>Хранилище фото</b><br/>[Container: S3]" }
+  refs@{ shape: cyl, label: "<b>Хранилище эталонов</b><br/>[Container: Qdrant]" }
+  registry["<b>Реестр моделей</b><br/>[Container: MLflow]"]:::ext
+  bus@{ shape: h-cyl, label: "<b>Шина событий</b><br/>[Container: Kafka]" }
+
+  returns -->|"1. Проверить возврат [REST]"| api
+  api -->|"2. photo_keys"| loader
+  loader -->|"Читает фото"| photos
+  loader -->|"3. Изображения"| quality
+  api -->|"2. sku"| refprov
+  refprov -->|"Эмбеддинги по SKU"| refs
+  router -->|"Алиас и веса"| registry
+  router -->|"Загружает версию модели"| infer
+  quality -->|"4. Годные изображения"| infer
+  refprov -->|"4. Эталоны"| infer
+  infer -->|"5. p_substitution, p_damage"| risk
+  quality -->|"quality"| risk
+  risk -->|"6. risk, quality, reasons,<br/>model_version"| api
+  api -->|"7. Ответ → шлюз «Ответ модели?»"| returns
+  risk -->|"Предсказание"| plog
+  plog -->|"inspection.predicted"| bus
+
+  class photos,refs,bus ext
+  classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+  classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+  classDef container fill:#438dd5,stroke:#2e6295,color:#ffffff
+  classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+  classDef ext fill:#8c8c8c,stroke:#6b6b6b,color:#ffffff
+  classDef ml fill:#438dd5,stroke:#e8590c,stroke-width:4px,color:#ffffff
+  classDef mlc fill:#85bbf0,stroke:#e8590c,stroke-width:3px,color:#000000

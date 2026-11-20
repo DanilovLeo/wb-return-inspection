@@ -1,0 +1,62 @@
+---
+title: "C4 · Уровень 2 · Containers — Платформа приёмки возвратов WB"
+config:
+  flowchart:
+    wrappingWidth: 360
+    nodeSpacing: 40
+    rankSpacing: 70
+  themeVariables:
+    fontSize: "15px"
+---
+flowchart LR
+  pvz["<b>Сотрудник ПВЗ</b><br/>[Person]"]:::person
+  inspector["<b>Инспектор склада</b><br/>[Person]"]:::person
+
+  subgraph platform["Платформа приёмки возвратов WB [Software System]"]
+    direction LR
+    pvzapp["<b>Приложение ПВЗ</b><br/>[Container: Android, Kotlin]<br/>Скан QR, съёмка фото по чек-листу,<br/>ручная проверка"]:::container
+    returns["<b>Сервис возвратов</b><br/>[Container: Go, REST]<br/>Правила возврата, пороги по риску,<br/>запасной путь, команды на деньги"]:::container
+    inspection["<b>Сервис проверки возврата (ML)</b><br/>[Container: Python, FastAPI + Triton, GPU]<br/>Считает риск подмены<br/>и повреждения по фото"]:::ml
+    photos@{ shape: cyl, label: "<b>Хранилище фото</b><br/>[Container: S3]<br/>Фото возвратов" }
+    returnsdb@{ shape: cyl, label: "<b>БД возвратов</b><br/>[Container: PostgreSQL]<br/>Заявки, решения, риск,<br/>версия модели" }
+    refs@{ shape: cyl, label: "<b>Хранилище эталонов</b><br/>[Container: Qdrant]<br/>Эмбеддинги эталонных<br/>фото по SKU" }
+    indexer["<b>Индексатор эталонов</b><br/>[Container: Python job]<br/>Считает эмбеддинги<br/>фото карточек"]:::container
+    bus@{ shape: h-cyl, label: "<b>Шина событий</b><br/>[Container: Kafka]<br/>inspection.predicted<br/>inspection.labeled" }
+    dataset@{ shape: cyl, label: "<b>Обучающая выборка</b><br/>[Container: ClickHouse + S3]<br/>Фото, предсказания,<br/>метки осмотра" }
+    training["<b>Пайплайн обучения</b><br/>[Container: Airflow, GPU]<br/>Переобучение, сравнение<br/>с прод-моделью, публикация"]:::container
+    registry["<b>Реестр моделей</b><br/>[Container: MLflow]<br/>Версии, алиасы<br/>production и previous"]:::container
+  end
+
+  oms["<b>Система заказов (OMS)</b><br/>[External System]"]:::ext
+  catalog["<b>Каталог товаров</b><br/>[External System]"]:::ext
+  payments["<b>Платёжный сервис</b><br/>[External System]"]:::ext
+  wms["<b>Складская система (WMS)</b><br/>[External System]"]:::ext
+
+  pvz -->|"Сканирует QR,<br/>фотографирует"| pvzapp
+  pvzapp -->|"Загружает фото<br/>[HTTPS]"| photos
+  pvzapp -->|"Создаёт возврат,<br/>итог ручной проверки<br/>[REST]"| returns
+  returns -->|"Срок и категория<br/>[REST]"| oms
+  returns -->|"Проверить фото возврата<br/>[REST, таймаут 3 с]"| inspection
+  inspection -->|"Читает фото"| photos
+  inspection -->|"Эталоны по SKU"| refs
+  inspection -->|"Загружает<br/>production-версию"| registry
+  inspection -->|"inspection.predicted"| bus
+  returns -->|"Решение, риск,<br/>версия модели"| returnsdb
+  returns -->|"Вернуть или удержать<br/>деньги [REST]"| payments
+  catalog -->|"Фото карточек"| indexer
+  indexer -->|"Эмбеддинги"| refs
+  inspector -->|"Итог осмотра"| wms
+  wms -->|"inspection.labeled"| bus
+  bus -->|"inspection.labeled:<br/>вернуть деньги или спор"| returns
+  bus -->|"Предсказания и метки"| dataset
+  dataset -->|"Выборка с метками"| training
+  training -->|"Публикует версию,<br/>если не хуже прода"| registry
+
+  class photos,returnsdb,refs,bus,dataset container
+  classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+  classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+  classDef container fill:#438dd5,stroke:#2e6295,color:#ffffff
+  classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+  classDef ext fill:#8c8c8c,stroke:#6b6b6b,color:#ffffff
+  classDef ml fill:#438dd5,stroke:#e8590c,stroke-width:4px,color:#ffffff
+  classDef mlc fill:#85bbf0,stroke:#e8590c,stroke-width:3px,color:#000000
